@@ -18,8 +18,8 @@ Lo último que podemos ver relacionado a la concurrencia es que el atributo dire
   ### Posibles condiciones de carrera
 Puede producise una condicion de carrera en los siguientes casos:
 - La variable direction en Snake esta creando una condicion de carrera, ya que esta siendo modificcada por dos hilos al mismo tiempo (snakeRunner y snakeApp), ya que randomTurn() de snakeRunner modifica la direccion y los keyListener de SnakeApp cambian la direccion de la serpiente y esto entra dentro del step en board.
-  ### Colecciones o estructuras no seguras en contexto concurrente.
+### Colecciones o estructuras no seguras en contexto concurrente.
 Pueden ser no seguras las siguientes estructuras:
 - En Snake su cuerpo es una ArrayDeque la cual es llamada en board verificando cada vez que se mueva si se comio un raton para crecer. Y ya que con SnakeRunner cada hilo mueve el raton, esto genera que muchos estados de cambio de la serpiente al comerce un raton se cambie su tamaño en la arraylist pero el snapshot que da el tamaño de la serpiente y utilizado por SnakeApp genere un error ya que esta utilizado por dos hilos (SnakeApp y SnakeRunner).
-  ### Ocurrencias de espera activa (busy-wait) o de sincronización innecesaria
+### Ocurrencias de espera activa (busy-wait) o de sincronización innecesaria
 Una busy-wait claro esta en randomEmpty ya que este buque corre a toda hora hasta que el guard lo bloquee y ya que este es utilizado por step y step lo utliza el hilo de las serpientes estas cada vez que comen una mice y verifica posiciones aleatorias para ver si hay un mice o teleport o etc. 
