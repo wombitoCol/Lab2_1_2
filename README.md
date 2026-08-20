@@ -15,3 +15,11 @@ El caso de que se come un turbo es más especial, ya que, luego de setear turboT
 La clase Board también tiene métodos synchronized en la colocación y posición de ratones, obstáculos, step (movimientos) y turbos. Esto, con el objetivo de que la visibilidad de estos estados y su respectiva colocación, todos los hilos sincronizadamente los puedan consultar y modificar sin datos incorrectos.
 
 Lo último que podemos ver relacionado a la concurrencia es que el atributo direction es un volatile, y esto ayuda a la modificación de este atributo, ya que es utilizado por varios hilos.
+  ### Posibles condiciones de carrera
+Puede producise una condicion de carrera en los siguientes casos:
+- La variable direction en Snake esta creando una condicion de carrera, ya que esta siendo modificcada por dos hilos al mismo tiempo (snakeRunner y snakeApp), ya que randomTurn() de snakeRunner modifica la direccion y los keyListener de SnakeApp cambian la direccion de la serpiente y esto entra dentro del step en board.
+  ### Colecciones o estructuras no seguras en contexto concurrente.
+Pueden ser no seguras las siguientes estructuras:
+- En Snake su cuerpo es una ArrayDeque la cual es llamada en board verificando cada vez que se mueva si se comio un raton para crecer. Y ya que con SnakeRunner cada hilo mueve el raton, esto genera que muchos estados de cambio de la serpiente al comerce un raton se cambie su tamaño en la arraylist pero el snapshot que da el tamaño de la serpiente y utilizado por SnakeApp genere un error ya que esta utilizado por dos hilos (SnakeApp y SnakeRunner).
+  ### Ocurrencias de espera activa (busy-wait) o de sincronización innecesaria
+Una busy-wait claro esta en randomEmpty ya que este buque corre a toda hora hasta que el guard lo bloquee y ya que este es utilizado por step y step lo utliza el hilo de las serpientes estas cada vez que comen una mice y verifica posiciones aleatorias para ver si hay un mice o teleport o etc. 
