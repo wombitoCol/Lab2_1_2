@@ -57,5 +57,6 @@ Comeinzo juego con 25 serpientes
 Juego corriendo normalmente
 
 <img width="743" height="673" alt="image" src="https://github.com/user-attachments/assets/5a1b656c-db6c-4563-9da6-5d37db63beae" />
+
 Funcion de pausa funcionando normalmente y mostrando la primera serpiente en morir
 
