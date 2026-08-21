@@ -23,3 +23,27 @@ Pueden ser no seguras las siguientes estructuras:
 - En Snake su cuerpo es una ArrayDeque la cual es llamada en board verificando cada vez que se mueva si se comio un raton para crecer. Y ya que con SnakeRunner cada hilo mueve el raton, esto genera que muchos estados de cambio de la serpiente al comerce un raton se cambie su tamaño en la arraylist pero el snapshot que da el tamaño de la serpiente y utilizado por SnakeApp genere un error ya que esta utilizado por dos hilos (SnakeApp y SnakeRunner).
 ### Ocurrencias de espera activa (busy-wait) o de sincronización innecesaria
 Una busy-wait claro esta en randomEmpty ya que este buque corre a toda hora hasta que el guard lo bloquee y ya que este es utilizado por step y step lo utliza el hilo de las serpientes estas cada vez que comen una mice y verifica posiciones aleatorias para ver si hay un mice o teleport o etc. 
+## Punto 3 — Iniciar/Pausar/Reanudar sin tearing
+
+Descubrí algo importante: el GameClock original solo pausaba el repintado, no el movimiento. Los SnakeRunner corren en su propio while independiente del clock, así que presionar "Action" nunca detenía realmente a las serpientes — un bug de fondo que había que arreglar para que Pausar tuviera sentido.
+
+Solución: creé PauseController, que coordina la pausa sin busy-wait:
+
+Cada SnakeRunner, al final de cada iteración (fuera de cualquier lock), llama a checkPausePoint(). Si está en pausa, se bloquea con monitor.wait() — un wait bloqueante real, no un spin.
+Cuando la UI pide pausar, arma un CountDownLatch con el número de serpientes vivas y espera (con timeout) a que todas confirmen que ya quedaron bloqueadas (cada una hace countDown() justo antes de entrar al wait).
+Solo cuando el latch llega a 0 —es decir, ningún hilo puede seguir mutando una serpiente— la UI lee longestAlive/firstDead. Así evitas el tearing: nunca lees una serpiente a medio mover.
+
+También aproveché para blindar Snake: antes body (un ArrayDeque, no thread-safe) se mutaba en advance() y se leía en snapshot()/pintado desde otro hilo sin ningún lock propio de la clase — solo Board.step() era synchronized, lo cual no protegía la lectura del panel de dibujo. Ahora todo pasa por un bodyLock interno.
+
+La UI quedó con un solo botón que cicla Iniciar → Pausar → Reanudar → Pausar..., y una etiqueta que al pausar muestra algo como:
+
+Mejor: S2 (longitud 9) | Peor: S0 (murió primero, orden 1)
+
+## Punto 4 — Robustez con N alto
+
+Con los cambios anteriores, corriendo con -Dsnakes=25 o más no debería haber ConcurrentModificationException porque:
+
+Board.mice()/obstacles()/turbo()/teleports() ya devolvían copias synchronized (esto ya estaba bien en el código base).
+Snake.snapshot() y Snake.length() ahora también están protegidos, que era el hueco real.
+El randomEmpty() con su guard acotado no es en realidad una espera activa de concurrencia (no gira esperando que otro hilo cambie algo compartido bajo contención) — es un retry acotado para generar una posición libre. Vale la pena aclarar esto en el reporte para no confundirlo con el busy-wait que sí eliminamos (el de pausa).
+Verifiqué que pauseController.checkPausePoint() se llama sin tener tomado el lock de Board ni el de Snake, así se evita cualquier posibilidad de deadlock entre el lock de pausa y las regiones críticas de movimiento.
