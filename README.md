@@ -47,3 +47,10 @@ Board.mice()/obstacles()/turbo()/teleports() ya devolvían copias synchronized (
 Snake.snapshot() y Snake.length() ahora también están protegidos, que era el hueco real.
 El randomEmpty() con su guard acotado no es en realidad una espera activa de concurrencia (no gira esperando que otro hilo cambie algo compartido bajo contención) — es un retry acotado para generar una posición libre. Vale la pena aclarar esto en el reporte para no confundirlo con el busy-wait que sí eliminamos (el de pausa).
 Verifiqué que pauseController.checkPausePoint() se llama sin tener tomado el lock de Board ni el de Snake, así se evita cualquier posibilidad de deadlock entre el lock de pausa y las regiones críticas de movimiento.
+<img width="1123" height="651" alt="image" src="https://github.com/user-attachments/assets/fa9ef08f-c08e-4ac9-bf3e-0a019051621b" />
+Comeinzo juego con 25 serpientes
+<img width="721" height="678" alt="image" src="https://github.com/user-attachments/assets/7cd3877f-6da8-4430-8ae1-42bbb0ce1fb7" />
+Juego corriendo normalmente
+<img width="743" height="673" alt="image" src="https://github.com/user-attachments/assets/5a1b656c-db6c-4563-9da6-5d37db63beae" />
+Funcion de pausa funcionando normalmente y mostrando la primera serpiente en morir
+
