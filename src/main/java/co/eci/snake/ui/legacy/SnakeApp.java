@@ -1,5 +1,6 @@
 package co.eci.snake.ui.legacy;
 
+import co.eci.snake.concurrency.PauseController;
 import co.eci.snake.concurrency.SnakeRunner;
 import co.eci.snake.core.Board;
 import co.eci.snake.core.Direction;
@@ -12,15 +13,25 @@ import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class SnakeApp extends JFrame {
+
+  private enum UiState { STOPPED, RUNNING, PAUSED }
 
   private final Board board;
   private final GamePanel gamePanel;
   private final JButton actionButton;
+  private final JLabel statsLabel;
   private final GameClock clock;
   private final java.util.List<Snake> snakes = new java.util.ArrayList<>();
+  private final PauseController pauseController = new PauseController();
+  private final AtomicInteger deathSequence = new AtomicInteger(0);
+
+  private ExecutorService snakesExecutor;
+  private UiState uiState = UiState.STOPPED;
 
   public SnakeApp() {
     super("The Snake Race");
@@ -31,15 +42,21 @@ public final class SnakeApp extends JFrame {
       int x = 2 + (i * 3) % board.width();
       int y = 2 + (i * 2) % board.height();
       var dir = Direction.values()[i % Direction.values().length];
-      snakes.add(Snake.of(x, y, dir));
+      snakes.add(Snake.of(i, x, y, dir));
     }
 
     this.gamePanel = new GamePanel(board, () -> snakes);
-    this.actionButton = new JButton("Action");
+    this.actionButton = new JButton("Iniciar");
+    this.statsLabel = new JLabel("Presiona Iniciar para comenzar.");
+    statsLabel.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
+
+    var south = new JPanel(new BorderLayout());
+    south.add(actionButton, BorderLayout.WEST);
+    south.add(statsLabel, BorderLayout.CENTER);
 
     setLayout(new BorderLayout());
     add(gamePanel, BorderLayout.CENTER);
-    add(actionButton, BorderLayout.SOUTH);
+    add(south, BorderLayout.SOUTH);
 
     setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
     pack();
@@ -47,16 +64,13 @@ public final class SnakeApp extends JFrame {
 
     this.clock = new GameClock(60, () -> SwingUtilities.invokeLater(gamePanel::repaint));
 
-    var exec = Executors.newVirtualThreadPerTaskExecutor();
-    snakes.forEach(s -> exec.submit(new SnakeRunner(s, board)));
-
-    actionButton.addActionListener((ActionEvent e) -> togglePause());
+    actionButton.addActionListener((ActionEvent e) -> onActionButton());
 
     gamePanel.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke("SPACE"), "pause");
     gamePanel.getActionMap().put("pause", new AbstractAction() {
       @Override
       public void actionPerformed(ActionEvent e) {
-        togglePause();
+        onActionButton();
       }
     });
 
@@ -125,17 +139,85 @@ public final class SnakeApp extends JFrame {
     }
 
     setVisible(true);
-    clock.start();
   }
 
-  private void togglePause() {
-    if ("Action".equals(actionButton.getText())) {
-      actionButton.setText("Resume");
-      clock.pause();
-    } else {
-      actionButton.setText("Action");
-      clock.resume();
+  /**
+   * Botón único Iniciar -> Pausar -> Reanudar -> Pausar ...
+   * (cumple el punto 3: Iniciar / Pausar / Reanudar).
+   */
+  private void onActionButton() {
+    switch (uiState) {
+      case STOPPED -> startGame();
+      case RUNNING -> pauseGame();
+      case PAUSED -> resumeGame();
     }
+  }
+
+  private void startGame() {
+    snakesExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    snakes.forEach(s -> snakesExecutor.submit(new SnakeRunner(s, board, pauseController, deathSequence)));
+    clock.start();
+    uiState = UiState.RUNNING;
+    actionButton.setText("Pausar");
+    statsLabel.setText("Carrera en curso...");
+  }
+
+  private void pauseGame() {
+    clock.pause();
+
+    long aliveCount = snakes.stream().filter(Snake::isAlive).count();
+    pauseController.pause((int) aliveCount);
+    try {
+      // Timeout defensivo: si por alguna razon algun hilo no llega a
+      // confirmar (p. ej. ya termino porque murio justo en ese instante),
+      // no queremos bloquear la UI para siempre.
+      pauseController.awaitQuiescence(500);
+    } catch (InterruptedException ie) {
+      Thread.currentThread().interrupt();
+    }
+
+    // A partir de aqui ningun SnakeRunner esta mutando estado (todos los
+    // que seguian vivos quedaron bloqueados en el monitor de
+    // PauseController), asi que leer longitudes/estado de vida es seguro:
+    // no hay tearing entre "cuenta las serpientes vivas" y "lee su longitud".
+    statsLabel.setText(buildStatsText());
+
+    uiState = UiState.PAUSED;
+    actionButton.setText("Reanudar");
+  }
+
+  private void resumeGame() {
+    pauseController.resume();
+    clock.resume();
+    uiState = UiState.RUNNING;
+    actionButton.setText("Pausar");
+    statsLabel.setText("Carrera en curso...");
+  }
+
+  private String buildStatsText() {
+    Snake longestAlive = null;
+    Snake firstDead = null;
+
+    for (Snake s : snakes) {
+      if (s.isAlive()) {
+        if (longestAlive == null || s.length() > longestAlive.length()) {
+          longestAlive = s;
+        }
+      } else {
+        if (firstDead == null || s.deathOrder() < firstDead.deathOrder()) {
+          firstDead = s;
+        }
+      }
+    }
+
+    String best = (longestAlive == null)
+        ? "ninguna serpiente viva"
+        : "S" + longestAlive.id() + " (longitud " + longestAlive.length() + ")";
+    String worst = (firstDead == null)
+        ? "ninguna serpiente ha muerto aun"
+        : "S" + firstDead.id() + " (murio primero, orden " + firstDead.deathOrder() + ")";
+
+    return "<html>Mejor: " + best + " &nbsp;&nbsp;|&nbsp;&nbsp; Peor: " + worst + "</html>";
   }
 
   public static final class GamePanel extends JPanel {
@@ -214,9 +296,11 @@ public final class SnakeApp extends JFrame {
       int idx = 0;
       for (Snake s : snakes) {
         var body = s.snapshot().toArray(new Position[0]);
+        boolean alive = s.isAlive();
         for (int i = 0; i < body.length; i++) {
           var p = body[i];
           Color base = (idx == 0) ? new Color(0, 170, 0) : new Color(0, 160, 180);
+          if (!alive) base = new Color(140, 140, 140); // serpientes muertas se pintan grises
           int shade = Math.max(0, 40 - i * 4);
           g2.setColor(new Color(
               Math.min(255, base.getRed() + shade),
